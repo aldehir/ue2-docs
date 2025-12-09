@@ -131,11 +131,11 @@ ue2-docs/
 - [x] Create directory structure
 - [x] Set up basic main.go
 
-### Phase 2: Core Infrastructure
-- [ ] Implement URL queue (thread-safe)
-- [ ] Implement visited URL tracker
-- [ ] Create URL normalization utilities
-- [ ] Implement URL filtering/whitelist logic
+### Phase 2: Core Infrastructure ✓
+- [x] Implement URL queue (thread-safe)
+- [x] Implement visited URL tracker
+- [x] Create URL normalization utilities
+- [x] Implement URL filtering/whitelist logic
 
 ### Phase 3: HTTP Fetching
 - [ ] Create HTTP fetcher with timeout
