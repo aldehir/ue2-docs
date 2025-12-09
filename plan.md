@@ -22,8 +22,10 @@ A Go-based web scraper to download and archive the UE2 (Unreal Engine 2) documen
 ```
 ue2-docs/
 ├── cmd/
-│   └── scraper/           # Main CLI application
-│       └── main.go
+│   └── ue2-docs/          # Main CLI application
+│       ├── main.go        # Entry point with subcommand routing
+│       ├── scrape.go      # 'scrape' subcommand
+│       └── convert.go     # 'convert' subcommand
 ├── internal/
 │   ├── scraper/           # Core scraping logic
 │   │   ├── scraper.go     # Main scraper orchestrator
@@ -52,11 +54,20 @@ ue2-docs/
 
 ## Core Components
 
-### 1. Main Entry Point (`cmd/scraper/main.go`)
-- Parse CLI flags (output directory, root URL, max workers, etc.)
-- Initialize scraper with configuration
-- Start scraping process
-- Handle graceful shutdown
+### 1. Main Entry Point (`cmd/ue2-docs/main.go`)
+- Route to subcommands: `scrape` or `convert`
+- Handle global flags and help
+- Graceful shutdown handling
+
+### 1a. Scrape Command (`cmd/ue2-docs/scrape.go`)
+- Parse scrape-specific flags (root URL, output, workers, whitelist)
+- Initialize and run scraper
+- Save HTML, CSS, JS, and assets with rewritten paths
+
+### 1b. Convert Command (`cmd/ue2-docs/convert.go`)
+- Parse convert-specific flags (input directory, output directory)
+- Walk HTML files in input directory
+- Convert each to markdown and save to output directory
 
 ### 2. Scraper Orchestrator (`internal/scraper/scraper.go`)
 - Coordinate worker pool
@@ -232,14 +243,35 @@ require (
 - Minimal dependencies, maximum flexibility
 - Single library for entire pipeline: scrape → rewrite → convert
 
-## Configuration Options
+## CLI Commands
 
+### `ue2-docs scrape`
+Scrape documentation from a website and save locally with rewritten paths.
+
+**Flags:**
 - `--root-url`: Starting URL (default: https://docs.unrealengine.com/udk/Two/SiteMap.html)
-- `--output`: Output directory (default: ./output)
+- `--output`: Output directory for scraped HTML (default: ./output)
 - `--workers`: Number of concurrent workers (default: 10)
 - `--whitelist`: Additional domains to allow (comma-separated)
 - `--max-depth`: Maximum link depth (optional)
-- `--convert-to-markdown`: Convert HTML to Markdown after scraping (default: false)
+
+**Example:**
+```bash
+ue2-docs scrape --root-url https://docs.unrealengine.com/udk/Two/SiteMap.html --output ./scraped
+```
+
+### `ue2-docs convert`
+Convert scraped HTML documentation to Markdown.
+
+**Flags:**
+- `--input`: Input directory containing scraped HTML (default: ./output)
+- `--output`: Output directory for markdown files (default: ./markdown)
+- `--preserve-structure`: Keep original directory structure (default: true)
+
+**Example:**
+```bash
+ue2-docs convert --input ./scraped --output ./docs
+```
 
 ## Success Criteria
 
