@@ -137,11 +137,11 @@ ue2-docs/
 - [x] Create URL normalization utilities
 - [x] Implement URL filtering/whitelist logic
 
-### Phase 3: HTTP Fetching
-- [ ] Create HTTP fetcher with timeout
-- [ ] Add retry logic
-- [ ] Implement content-type detection
-- [ ] Add rate limiting (optional)
+### Phase 3: HTTP Fetching ✓
+- [x] Create HTTP fetcher with timeout
+- [x] Add retry logic
+- [x] Implement content-type detection
+- [x] Add rate limiting (optional)
 
 ### Phase 4: Storage Layer
 - [ ] Implement file storage with directory structure
