@@ -136,17 +136,27 @@ func TestFilter_GetResourceType(t *testing.T) {
 		{
 			name: "Font file (woff)",
 			url:  "https://example.com/font.woff",
-			want: ResourceOther,
+			want: ResourceFont,
 		},
 		{
 			name: "Font file (woff2)",
 			url:  "https://example.com/font.woff2",
-			want: ResourceOther,
+			want: ResourceFont,
 		},
 		{
 			name: "Font file (ttf)",
 			url:  "https://example.com/font.ttf",
-			want: ResourceOther,
+			want: ResourceFont,
+		},
+		{
+			name: "Font file (otf)",
+			url:  "https://example.com/font.otf",
+			want: ResourceFont,
+		},
+		{
+			name: "Font file (eot)",
+			url:  "https://example.com/font.eot",
+			want: ResourceFont,
 		},
 		{
 			name: "PDF file",
@@ -190,9 +200,33 @@ func TestFilter_GetResourceType(t *testing.T) {
 			want:        ResourceImage,
 		},
 		{
-			name: "unknown extension defaults to Other",
+			name:        "JavaScript by content type (application/x-javascript)",
+			url:         "https://example.com/app",
+			contentType: "application/x-javascript",
+			want:        ResourceJS,
+		},
+		{
+			name:        "JavaScript module by extension (.mjs)",
+			url:         "https://example.com/module.mjs",
+			contentType: "",
+			want:        ResourceJS,
+		},
+		{
+			name:        "Font by content type (font/woff2)",
+			url:         "https://example.com/font",
+			contentType: "font/woff2",
+			want:        ResourceFont,
+		},
+		{
+			name:        "Font by content type (font/ttf)",
+			url:         "https://example.com/font",
+			contentType: "font/ttf",
+			want:        ResourceFont,
+		},
+		{
+			name: "unknown extension defaults to Unknown",
 			url:  "https://example.com/file.xyz",
-			want: ResourceOther,
+			want: ResourceUnknown,
 		},
 		{
 			name: "no extension defaults to HTML",
@@ -254,6 +288,192 @@ func TestNewFilter(t *testing.T) {
 			// If we expect an error, the filter operations should handle it
 			if !tt.wantErr && filter == nil {
 				t.Errorf("NewFilter() returned nil for valid input")
+			}
+		})
+	}
+}
+
+func TestDetectResourceType(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		contentType string
+		want        ResourceType
+	}{
+		{
+			name:        "HTML by content-type",
+			url:         "https://example.com/page",
+			contentType: "text/html; charset=utf-8",
+			want:        ResourceHTML,
+		},
+		{
+			name:        "CSS by content-type",
+			url:         "https://example.com/style",
+			contentType: "text/css",
+			want:        ResourceCSS,
+		},
+		{
+			name:        "JavaScript by content-type",
+			url:         "https://example.com/script",
+			contentType: "application/javascript",
+			want:        ResourceJS,
+		},
+		{
+			name:        "Image by content-type",
+			url:         "https://example.com/photo",
+			contentType: "image/png",
+			want:        ResourceImage,
+		},
+		{
+			name:        "Font by content-type",
+			url:         "https://example.com/font",
+			contentType: "font/woff2",
+			want:        ResourceFont,
+		},
+		{
+			name: "HTML by extension",
+			url:  "https://example.com/page.html",
+			want: ResourceHTML,
+		},
+		{
+			name: "JavaScript by extension",
+			url:  "https://example.com/script.js",
+			want: ResourceJS,
+		},
+		{
+			name: "Font by extension",
+			url:  "https://example.com/font.woff",
+			want: ResourceFont,
+		},
+		{
+			name: "PDF by extension",
+			url:  "https://example.com/doc.pdf",
+			want: ResourceOther,
+		},
+		{
+			name: "Unknown extension",
+			url:  "https://example.com/file.xyz",
+			want: ResourceUnknown,
+		},
+		{
+			name:        "Content-Type takes precedence over extension",
+			url:         "https://example.com/page.js",
+			contentType: "text/html",
+			want:        ResourceHTML,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DetectResourceType(tt.url, tt.contentType)
+			if got != tt.want {
+				t.Errorf("DetectResourceType() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResourceType_GetWeight(t *testing.T) {
+	tests := []struct {
+		name string
+		rt   ResourceType
+		want int
+	}{
+		{
+			name: "HTML has highest priority",
+			rt:   ResourceHTML,
+			want: 100,
+		},
+		{
+			name: "CSS has high priority",
+			rt:   ResourceCSS,
+			want: 75,
+		},
+		{
+			name: "JavaScript has medium priority",
+			rt:   ResourceJS,
+			want: 50,
+		},
+		{
+			name: "Image has low priority",
+			rt:   ResourceImage,
+			want: 25,
+		},
+		{
+			name: "Font has lower priority than images",
+			rt:   ResourceFont,
+			want: 20,
+		},
+		{
+			name: "Other has very low priority",
+			rt:   ResourceOther,
+			want: 10,
+		},
+		{
+			name: "Unknown has lowest priority",
+			rt:   ResourceUnknown,
+			want: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.rt.GetWeight()
+			if got != tt.want {
+				t.Errorf("ResourceType.GetWeight() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResourceType_String(t *testing.T) {
+	tests := []struct {
+		name string
+		rt   ResourceType
+		want string
+	}{
+		{
+			name: "HTML",
+			rt:   ResourceHTML,
+			want: "HTML",
+		},
+		{
+			name: "CSS",
+			rt:   ResourceCSS,
+			want: "CSS",
+		},
+		{
+			name: "JavaScript",
+			rt:   ResourceJS,
+			want: "JavaScript",
+		},
+		{
+			name: "Image",
+			rt:   ResourceImage,
+			want: "Image",
+		},
+		{
+			name: "Font",
+			rt:   ResourceFont,
+			want: "Font",
+		},
+		{
+			name: "Other",
+			rt:   ResourceOther,
+			want: "Other",
+		},
+		{
+			name: "Unknown",
+			rt:   ResourceUnknown,
+			want: "Unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.rt.String()
+			if got != tt.want {
+				t.Errorf("ResourceType.String() = %v, want %v", got, tt.want)
 			}
 		})
 	}
