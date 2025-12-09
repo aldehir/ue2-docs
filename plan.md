@@ -33,6 +33,9 @@ ue2-docs/
 │   │   ├── html.go        # HTML parser and path rewriter
 │   │   ├── css.go         # CSS parser and URL rewriter
 │   │   └── paths.go       # Path resolution utilities
+│   ├── converter/         # HTML to Markdown conversion
+│   │   ├── converter.go   # Main conversion logic
+│   │   └── elements.go    # Element-specific converters
 │   ├── fetcher/           # HTTP fetching logic
 │   │   └── fetcher.go     # HTTP client with retry/timeout
 │   ├── storage/           # File system operations
@@ -103,6 +106,13 @@ ue2-docs/
 - Filter URLs (whitelist check, same-origin policy)
 - Detect resource types by extension/content-type
 
+### 10. Markdown Converter (`internal/converter/`)
+- Convert HTML to Markdown using `golang.org/x/net/html`
+- Element-specific conversion logic (headings, links, images, code blocks)
+- Handle UE2-specific formatting
+- Preserve code examples and special content
+- Generate clean, readable markdown output
+
 ## Implementation Phases
 
 ### Phase 1: Project Setup ✓
@@ -158,6 +168,15 @@ ue2-docs/
 - [ ] Optimize performance
 - [ ] Add unit tests
 
+### Phase 10: Markdown Conversion
+- [ ] Implement HTML node walker
+- [ ] Create element-to-markdown converters (h1-h6, p, a, img, code, pre, ul, ol, table)
+- [ ] Handle nested elements and text formatting (bold, italic, code)
+- [ ] Convert scraped HTML files to markdown
+- [ ] Preserve code blocks and UE2-specific content
+- [ ] Generate index/navigation for markdown docs
+- [ ] Validate markdown output
+
 ## Technical Details
 
 ### Cycle Detection
@@ -199,12 +218,19 @@ ue2-docs/
 
 ```go
 require (
-    golang.org/x/net v0.x.x  // HTML parsing
+    golang.org/x/net v0.x.x  // HTML parsing and manipulation
     // Potentially:
-    // - github.com/tdewolff/parse/v2 for CSS parsing
-    // - github.com/PuerkitoBio/goquery for easier HTML manipulation
+    // - github.com/tdewolff/parse/v2 for CSS parsing (if needed)
 )
 ```
+
+**Why golang.org/x/net/html?**
+- Official Go extended library (15,509+ packages use it)
+- HTML5-compliant parser with tokenizer and node tree APIs
+- Perfect for both scraping AND markdown conversion
+- Fine-grained control for custom HTML-to-Markdown logic
+- Minimal dependencies, maximum flexibility
+- Single library for entire pipeline: scrape → rewrite → convert
 
 ## Configuration Options
 
@@ -213,12 +239,22 @@ require (
 - `--workers`: Number of concurrent workers (default: 10)
 - `--whitelist`: Additional domains to allow (comma-separated)
 - `--max-depth`: Maximum link depth (optional)
+- `--convert-to-markdown`: Convert HTML to Markdown after scraping (default: false)
 
 ## Success Criteria
 
+### Phase 1-9: HTML Scraping
 1. Complete scrape of UE2 documentation
 2. All HTML pages render correctly offline
 3. All CSS styles applied correctly
 4. All images display correctly
 5. No broken internal links
 6. Reasonable performance (minutes, not hours)
+
+### Phase 10: Markdown Conversion
+7. Clean, readable markdown files generated from HTML
+8. All links work correctly in markdown (relative paths preserved)
+9. Images embedded properly with correct paths
+10. Code blocks and formatting preserved
+11. Documentation navigable as markdown (e.g., via GitHub, static site generators)
+12. Markdown files suitable for version control and collaboration
