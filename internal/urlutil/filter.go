@@ -11,10 +11,12 @@ import (
 type ResourceType int
 
 const (
-	ResourceHTML ResourceType = iota
+	ResourceUnknown ResourceType = iota
+	ResourceHTML
 	ResourceCSS
 	ResourceJS
 	ResourceImage
+	ResourceFont
 	ResourceOther
 )
 
@@ -26,9 +28,11 @@ func (rt ResourceType) String() string {
 	case ResourceCSS:
 		return "CSS"
 	case ResourceJS:
-		return "JS"
+		return "JavaScript"
 	case ResourceImage:
 		return "Image"
+	case ResourceFont:
+		return "Font"
 	case ResourceOther:
 		return "Other"
 	default:
@@ -101,22 +105,26 @@ func (f *Filter) IsAllowed(rawURL string) (bool, error) {
 	return false, nil
 }
 
-// GetResourceType determines the resource type based on URL extension and content type
-func (f *Filter) GetResourceType(rawURL, contentType string) ResourceType {
+// DetectResourceType determines the resource type based on URL and content type
+// This is a standalone function that can be used without a Filter instance
+func DetectResourceType(rawURL, contentType string) ResourceType {
 	// First try to determine by Content-Type header if provided
 	if contentType != "" {
-		contentType = strings.ToLower(strings.Split(contentType, ";")[0])
-		contentType = strings.TrimSpace(contentType)
+		ct := strings.ToLower(strings.Split(contentType, ";")[0])
+		ct = strings.TrimSpace(ct)
 
 		switch {
-		case strings.Contains(contentType, "text/html"):
+		case strings.Contains(ct, "text/html"):
 			return ResourceHTML
-		case strings.Contains(contentType, "text/css"):
+		case strings.Contains(ct, "text/css"):
 			return ResourceCSS
-		case strings.Contains(contentType, "javascript"):
+		case strings.Contains(ct, "javascript"), strings.Contains(ct, "application/javascript"),
+			strings.Contains(ct, "application/x-javascript"), strings.Contains(ct, "text/javascript"):
 			return ResourceJS
-		case strings.HasPrefix(contentType, "image/"):
+		case strings.HasPrefix(ct, "image/"):
 			return ResourceImage
+		case strings.Contains(ct, "font"), strings.Contains(ct, "woff"), strings.Contains(ct, "ttf"):
+			return ResourceFont
 		}
 	}
 
@@ -134,16 +142,26 @@ func (f *Filter) GetResourceType(rawURL, contentType string) ResourceType {
 		return ResourceHTML
 	case ".css":
 		return ResourceCSS
-	case ".js":
+	case ".js", ".mjs":
 		return ResourceJS
 	case ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp":
 		return ResourceImage
+	case ".woff", ".woff2", ".ttf", ".otf", ".eot":
+		return ResourceFont
+	case ".pdf", ".zip", ".tar", ".gz":
+		return ResourceOther
 	case "":
 		// No extension - assume HTML (common for index pages)
 		return ResourceHTML
 	default:
-		return ResourceOther
+		return ResourceUnknown
 	}
+}
+
+// GetResourceType is a convenience method that calls DetectResourceType
+// Kept for backward compatibility
+func (f *Filter) GetResourceType(rawURL, contentType string) ResourceType {
+	return DetectResourceType(rawURL, contentType)
 }
 
 // GetWeight returns the priority weight for a resource type
@@ -158,8 +176,12 @@ func (rt ResourceType) GetWeight() int {
 		return 50
 	case ResourceImage:
 		return 25
+	case ResourceFont:
+		return 20
 	case ResourceOther:
 		return 10
+	case ResourceUnknown:
+		return 5
 	default:
 		return 0
 	}

@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/aldehir/ue2-docs/internal/urlutil"
 )
 
 func TestFetcher_Fetch_Success(t *testing.T) {
@@ -48,7 +50,7 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 		t.Errorf("expected content-type 'text/html; charset=utf-8', got '%s'", resp.ContentType)
 	}
 
-	if resp.ResourceType != ResourceTypeHTML {
+	if resp.ResourceType != urlutil.ResourceHTML {
 		t.Errorf("expected resource type HTML, got %v", resp.ResourceType)
 	}
 }

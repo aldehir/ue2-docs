@@ -7,19 +7,8 @@ import (
 	"math"
 	"net/http"
 	"time"
-)
 
-// ResourceType represents the type of fetched resource
-type ResourceType int
-
-const (
-	ResourceTypeUnknown ResourceType = iota
-	ResourceTypeHTML
-	ResourceTypeCSS
-	ResourceTypeJavaScript
-	ResourceTypeImage
-	ResourceTypeFont
-	ResourceTypeOther
+	"github.com/aldehir/ue2-docs/internal/urlutil"
 )
 
 // Response represents a fetched resource
@@ -27,7 +16,7 @@ type Response struct {
 	URL          string
 	StatusCode   int
 	ContentType  string
-	ResourceType ResourceType
+	ResourceType urlutil.ResourceType
 	Body         []byte
 	Headers      http.Header
 }
@@ -162,7 +151,7 @@ func (f *Fetcher) doFetch(ctx context.Context, url string) (*Response, error) {
 		URL:          url,
 		StatusCode:   resp.StatusCode,
 		ContentType:  contentType,
-		ResourceType: DetectResourceType(url, contentType),
+		ResourceType: urlutil.DetectResourceType(url, contentType),
 		Body:         body,
 		Headers:      resp.Header,
 	}, nil
