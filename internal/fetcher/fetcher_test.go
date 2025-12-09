@@ -1,6 +1,7 @@
 package fetcher
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -32,7 +33,9 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 	fetcher := New(config)
 
 	ctx := context.Background()
-	resp, err := fetcher.Fetch(ctx, server.URL)
+	buf := &bytes.Buffer{}
+
+	resp, err := fetcher.Fetch(ctx, server.URL, buf)
 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -42,8 +45,8 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	if string(resp.Body) != string(expectedBody) {
-		t.Errorf("expected body '%s', got '%s'", expectedBody, resp.Body)
+	if buf.String() != string(expectedBody) {
+		t.Errorf("expected body '%s', got '%s'", expectedBody, buf.String())
 	}
 
 	if resp.ContentType != "text/html; charset=utf-8" {
@@ -52,6 +55,45 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 
 	if resp.ResourceType != urlutil.ResourceHTML {
 		t.Errorf("expected resource type HTML, got %v", resp.ResourceType)
+	}
+
+	if resp.BytesWritten != int64(len(expectedBody)) {
+		t.Errorf("expected %d bytes written, got %d", len(expectedBody), resp.BytesWritten)
+	}
+}
+
+func TestFetcher_Fetch_LargeFile(t *testing.T) {
+	// Create a large test file (1MB)
+	largeContent := make([]byte, 1024*1024)
+	for i := range largeContent {
+		largeContent[i] = byte(i % 256)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write(largeContent)
+	}))
+	defer server.Close()
+
+	config := DefaultConfig()
+	fetcher := New(config)
+
+	ctx := context.Background()
+	buf := &bytes.Buffer{}
+
+	resp, err := fetcher.Fetch(ctx, server.URL, buf)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if resp.BytesWritten != int64(len(largeContent)) {
+		t.Errorf("expected %d bytes written, got %d", len(largeContent), resp.BytesWritten)
+	}
+
+	if buf.Len() != len(largeContent) {
+		t.Errorf("expected %d bytes in buffer, got %d", len(largeContent), buf.Len())
 	}
 }
 
@@ -78,7 +120,9 @@ func TestFetcher_Fetch_RetryOnServerError(t *testing.T) {
 	fetcher := New(config)
 
 	ctx := context.Background()
-	resp, err := fetcher.Fetch(ctx, server.URL)
+	buf := &bytes.Buffer{}
+
+	resp, err := fetcher.Fetch(ctx, server.URL, buf)
 
 	if err != nil {
 		t.Fatalf("expected no error after retries, got %v", err)
@@ -107,7 +151,9 @@ func TestFetcher_Fetch_NoRetryOnClientError(t *testing.T) {
 	fetcher := New(config)
 
 	ctx := context.Background()
-	_, err := fetcher.Fetch(ctx, server.URL)
+	buf := &bytes.Buffer{}
+
+	_, err := fetcher.Fetch(ctx, server.URL, buf)
 
 	if err == nil {
 		t.Fatal("expected error for 404, got nil")
@@ -134,7 +180,9 @@ func TestFetcher_Fetch_MaxRetriesExceeded(t *testing.T) {
 	fetcher := New(config)
 
 	ctx := context.Background()
-	_, err := fetcher.Fetch(ctx, server.URL)
+	buf := &bytes.Buffer{}
+
+	_, err := fetcher.Fetch(ctx, server.URL, buf)
 
 	if err == nil {
 		t.Fatal("expected error after max retries, got nil")
@@ -161,7 +209,8 @@ func TestFetcher_Fetch_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := fetcher.Fetch(ctx, server.URL)
+	buf := &bytes.Buffer{}
+	_, err := fetcher.Fetch(ctx, server.URL, buf)
 
 	if err == nil {
 		t.Fatal("expected context cancellation error, got nil")
@@ -186,7 +235,9 @@ func TestFetcher_Fetch_Timeout(t *testing.T) {
 	fetcher := New(config)
 
 	ctx := context.Background()
-	_, err := fetcher.Fetch(ctx, server.URL)
+	buf := &bytes.Buffer{}
+
+	_, err := fetcher.Fetch(ctx, server.URL, buf)
 
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
@@ -215,7 +266,8 @@ func TestFetcher_Fetch_WithRateLimiter(t *testing.T) {
 
 	// Make 10 requests
 	for i := 0; i < 10; i++ {
-		_, err := fetcher.Fetch(ctx, server.URL)
+		buf := &bytes.Buffer{}
+		_, err := fetcher.Fetch(ctx, server.URL, buf)
 		if err != nil {
 			t.Fatalf("request %d failed: %v", i, err)
 		}
@@ -265,7 +317,9 @@ func TestFetcher_InvalidURL(t *testing.T) {
 	fetcher := New(config)
 
 	ctx := context.Background()
-	_, err := fetcher.Fetch(ctx, "://invalid-url")
+	buf := &bytes.Buffer{}
+
+	_, err := fetcher.Fetch(ctx, "://invalid-url", buf)
 
 	if err == nil {
 		t.Fatal("expected error for invalid URL, got nil")
@@ -288,14 +342,20 @@ func TestFetcher_FollowsRedirects(t *testing.T) {
 	fetcher := New(config)
 
 	ctx := context.Background()
-	resp, err := fetcher.Fetch(ctx, redirectServer.URL)
+	buf := &bytes.Buffer{}
+
+	resp, err := fetcher.Fetch(ctx, redirectServer.URL, buf)
 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if string(resp.Body) != "final destination" {
-		t.Errorf("expected 'final destination', got '%s'", resp.Body)
+	if buf.String() != "final destination" {
+		t.Errorf("expected 'final destination', got '%s'", buf.String())
+	}
+
+	if resp.BytesWritten != int64(len("final destination")) {
+		t.Errorf("expected %d bytes written, got %d", len("final destination"), resp.BytesWritten)
 	}
 }
 
@@ -310,197 +370,16 @@ func TestFetcher_TooManyRedirects(t *testing.T) {
 	fetcher := New(config)
 
 	ctx := context.Background()
-	_, err := fetcher.Fetch(ctx, server.URL)
+	buf := &bytes.Buffer{}
+
+	_, err := fetcher.Fetch(ctx, server.URL, buf)
 
 	if err == nil {
 		t.Fatal("expected error for too many redirects, got nil")
 	}
 }
 
-func TestFetcher_FetchToWriter_Success(t *testing.T) {
-	expectedBody := []byte("large file content for streaming")
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		w.WriteHeader(http.StatusOK)
-		w.Write(expectedBody)
-	}))
-	defer server.Close()
-
-	config := DefaultConfig()
-	config.UserAgent = "test-agent"
-	fetcher := New(config)
-
-	ctx := context.Background()
-	var buf []byte
-	writer := &testWriter{buf: &buf}
-
-	resp, err := fetcher.FetchToWriter(ctx, server.URL, writer)
-
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	if resp.ContentType != "image/png" {
-		t.Errorf("expected content-type 'image/png', got '%s'", resp.ContentType)
-	}
-
-	if resp.ResourceType != urlutil.ResourceImage {
-		t.Errorf("expected resource type Image, got %v", resp.ResourceType)
-	}
-
-	if resp.BytesWritten != int64(len(expectedBody)) {
-		t.Errorf("expected %d bytes written, got %d", len(expectedBody), resp.BytesWritten)
-	}
-
-	if string(buf) != string(expectedBody) {
-		t.Errorf("expected body '%s', got '%s'", expectedBody, buf)
-	}
-}
-
-func TestFetcher_FetchToWriter_LargeFile(t *testing.T) {
-	// Create a large test file (1MB)
-	largeContent := make([]byte, 1024*1024)
-	for i := range largeContent {
-		largeContent[i] = byte(i % 256)
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.WriteHeader(http.StatusOK)
-		w.Write(largeContent)
-	}))
-	defer server.Close()
-
-	config := DefaultConfig()
-	fetcher := New(config)
-
-	ctx := context.Background()
-	var buf []byte
-	writer := &testWriter{buf: &buf}
-
-	resp, err := fetcher.FetchToWriter(ctx, server.URL, writer)
-
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if resp.BytesWritten != int64(len(largeContent)) {
-		t.Errorf("expected %d bytes written, got %d", len(largeContent), resp.BytesWritten)
-	}
-
-	if len(buf) != len(largeContent) {
-		t.Errorf("expected %d bytes in buffer, got %d", len(largeContent), len(buf))
-	}
-}
-
-func TestFetcher_FetchToWriter_RetryOnServerError(t *testing.T) {
-	var attempts atomic.Int32
-	expectedBody := []byte("success after retry")
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := attempts.Add(1)
-
-		// Fail first 2 attempts, succeed on 3rd
-		if count < 3 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Write(expectedBody)
-	}))
-	defer server.Close()
-
-	config := DefaultConfig()
-	config.MaxRetries = 3
-	config.InitialDelay = 10 * time.Millisecond
-	fetcher := New(config)
-
-	ctx := context.Background()
-	var buf []byte
-	writer := &testWriter{buf: &buf}
-
-	resp, err := fetcher.FetchToWriter(ctx, server.URL, writer)
-
-	if err != nil {
-		t.Fatalf("expected no error after retries, got %v", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	if attempts.Load() != 3 {
-		t.Errorf("expected 3 attempts, got %d", attempts.Load())
-	}
-
-	if string(buf) != string(expectedBody) {
-		t.Errorf("expected body '%s', got '%s'", expectedBody, buf)
-	}
-}
-
-func TestFetcher_FetchToWriter_NoRetryOnClientError(t *testing.T) {
-	var attempts atomic.Int32
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts.Add(1)
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	config := DefaultConfig()
-	config.MaxRetries = 3
-	fetcher := New(config)
-
-	ctx := context.Background()
-	var buf []byte
-	writer := &testWriter{buf: &buf}
-
-	_, err := fetcher.FetchToWriter(ctx, server.URL, writer)
-
-	if err == nil {
-		t.Fatal("expected error for 404, got nil")
-	}
-
-	// Should only attempt once, no retries on 4xx errors
-	if attempts.Load() != 1 {
-		t.Errorf("expected 1 attempt (no retries on 404), got %d", attempts.Load())
-	}
-}
-
-func TestFetcher_FetchToWriter_ContextCancellation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	config := DefaultConfig()
-	fetcher := New(config)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	var buf []byte
-	writer := &testWriter{buf: &buf}
-
-	_, err := fetcher.FetchToWriter(ctx, server.URL, writer)
-
-	if err == nil {
-		t.Fatal("expected context cancellation error, got nil")
-	}
-
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled error, got %v", err)
-	}
-}
-
-func TestFetcher_FetchToWriter_WriterError(t *testing.T) {
+func TestFetcher_WriterError(t *testing.T) {
 	expectedBody := []byte("test content")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -516,7 +395,7 @@ func TestFetcher_FetchToWriter_WriterError(t *testing.T) {
 	ctx := context.Background()
 	writer := &errorWriter{err: errors.New("write error")}
 
-	_, err := fetcher.FetchToWriter(ctx, server.URL, writer)
+	_, err := fetcher.Fetch(ctx, server.URL, writer)
 
 	if err == nil {
 		t.Fatal("expected writer error, got nil")
@@ -525,16 +404,6 @@ func TestFetcher_FetchToWriter_WriterError(t *testing.T) {
 	if !errors.Is(err, writer.err) {
 		t.Errorf("expected writer error, got %v", err)
 	}
-}
-
-// testWriter is a simple io.Writer implementation for testing
-type testWriter struct {
-	buf *[]byte
-}
-
-func (w *testWriter) Write(p []byte) (n int, err error) {
-	*w.buf = append(*w.buf, p...)
-	return len(p), nil
 }
 
 // errorWriter is an io.Writer that always returns an error

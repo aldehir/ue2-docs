@@ -11,18 +11,8 @@ import (
 	"github.com/aldehir/ue2-docs/internal/urlutil"
 )
 
-// Response represents a fetched resource with body loaded in memory
+// Response represents a fetched resource
 type Response struct {
-	URL          string
-	StatusCode   int
-	ContentType  string
-	ResourceType urlutil.ResourceType
-	Body         []byte
-	Headers      http.Header
-}
-
-// StreamResponse represents a fetched resource streamed to a writer
-type StreamResponse struct {
 	URL          string
 	StatusCode   int
 	ContentType  string
@@ -76,8 +66,8 @@ func New(config Config) *Fetcher {
 	}
 }
 
-// Fetch retrieves a resource from the given URL with retry logic
-func (f *Fetcher) Fetch(ctx context.Context, url string) (*Response, error) {
+// Fetch retrieves a resource and streams it to the provided writer
+func (f *Fetcher) Fetch(ctx context.Context, url string, w io.Writer) (*Response, error) {
 	var lastErr error
 
 	for attempt := 0; attempt <= f.config.MaxRetries; attempt++ {
@@ -100,7 +90,7 @@ func (f *Fetcher) Fetch(ctx context.Context, url string) (*Response, error) {
 			}
 		}
 
-		resp, err := f.doFetch(ctx, url)
+		resp, err := f.doFetch(ctx, url, w)
 		if err == nil {
 			return resp, nil
 		}
@@ -121,100 +111,8 @@ func (f *Fetcher) Fetch(ctx context.Context, url string) (*Response, error) {
 	return nil, fmt.Errorf("failed after %d retries: %w", f.config.MaxRetries, lastErr)
 }
 
-// FetchToWriter retrieves a resource and streams it directly to the provided writer
-// This is more memory-efficient for large files (images, videos, etc.)
-func (f *Fetcher) FetchToWriter(ctx context.Context, url string, w io.Writer) (*StreamResponse, error) {
-	var lastErr error
-
-	for attempt := 0; attempt <= f.config.MaxRetries; attempt++ {
-		if attempt > 0 {
-			// Calculate exponential backoff delay
-			delay := f.calculateBackoff(attempt)
-
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
-				// Continue to retry
-			}
-		}
-
-		// Apply rate limiting if configured
-		if f.config.RateLimiter != nil {
-			if err := f.config.RateLimiter.Wait(ctx); err != nil {
-				return nil, err
-			}
-		}
-
-		resp, err := f.doFetchToWriter(ctx, url, w)
-		if err == nil {
-			return resp, nil
-		}
-
-		lastErr = err
-
-		// Don't retry on context cancellation
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		// Don't retry on client errors (4xx), only on server errors (5xx) or network errors
-		if resp != nil && resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			return nil, fmt.Errorf("client error %d: %w", resp.StatusCode, err)
-		}
-	}
-
-	return nil, fmt.Errorf("failed after %d retries: %w", f.config.MaxRetries, lastErr)
-}
-
-// doFetch performs a single HTTP request
-func (f *Fetcher) doFetch(ctx context.Context, url string) (*Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set("User-Agent", f.config.UserAgent)
-
-	resp, err := f.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return &Response{
-			URL:        url,
-			StatusCode: resp.StatusCode,
-			Headers:    resp.Header,
-		}, fmt.Errorf("reading response body: %w", err)
-	}
-
-	// Check for non-2xx status codes
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &Response{
-			URL:        url,
-			StatusCode: resp.StatusCode,
-			Headers:    resp.Header,
-		}, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	contentType := resp.Header.Get("Content-Type")
-
-	return &Response{
-		URL:          url,
-		StatusCode:   resp.StatusCode,
-		ContentType:  contentType,
-		ResourceType: urlutil.DetectResourceType(url, contentType),
-		Body:         body,
-		Headers:      resp.Header,
-	}, nil
-}
-
-// doFetchToWriter performs a single HTTP request and streams the response to a writer
-func (f *Fetcher) doFetchToWriter(ctx context.Context, url string, w io.Writer) (*StreamResponse, error) {
+// doFetch performs a single HTTP request and streams the response to a writer
+func (f *Fetcher) doFetch(ctx context.Context, url string, w io.Writer) (*Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -230,7 +128,7 @@ func (f *Fetcher) doFetchToWriter(ctx context.Context, url string, w io.Writer) 
 
 	// Check for non-2xx status codes before streaming
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &StreamResponse{
+		return &Response{
 			URL:        url,
 			StatusCode: resp.StatusCode,
 			Headers:    resp.Header,
@@ -240,7 +138,7 @@ func (f *Fetcher) doFetchToWriter(ctx context.Context, url string, w io.Writer) 
 	// Stream response body to writer
 	bytesWritten, err := io.Copy(w, resp.Body)
 	if err != nil {
-		return &StreamResponse{
+		return &Response{
 			URL:          url,
 			StatusCode:   resp.StatusCode,
 			BytesWritten: bytesWritten,
@@ -250,7 +148,7 @@ func (f *Fetcher) doFetchToWriter(ctx context.Context, url string, w io.Writer) 
 
 	contentType := resp.Header.Get("Content-Type")
 
-	return &StreamResponse{
+	return &Response{
 		URL:          url,
 		StatusCode:   resp.StatusCode,
 		ContentType:  contentType,
